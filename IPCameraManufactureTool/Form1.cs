@@ -5,12 +5,14 @@ using System.Data;
 using System.Drawing;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
+using System.Runtime.InteropServices;
 
 namespace IPCameraManufactureTool
 {
@@ -31,6 +33,7 @@ namespace IPCameraManufactureTool
         private StreamWriter log;
         private string CameraAddress;
         private string CameraAuth = "";
+        private string CameraStreamUri = "rtsp://$IP/h264";
         private int progressMax = 100;
         private int progressConfig = 0;
 
@@ -85,8 +88,9 @@ namespace IPCameraManufactureTool
             log.Close();
 
             comboBox1.Enabled = true;
-            textBox1.Enabled = true;
-            button1.Enabled = false;
+            textBoxSerialNumber.Enabled = true;
+            buttonConfig.Enabled = false;
+            this.ActiveControl = textBoxSerialNumber;
         }
 
         public bool PingHost(string nameOrAddress)
@@ -135,7 +139,10 @@ namespace IPCameraManufactureTool
 
             await Task.WhenAll(tasks).ContinueWith(t =>
             {
-                labelOutput.Text = "";
+                labelOutput.Invoke((MethodInvoker)delegate
+                {
+                    labelOutput.Text = "Found!";
+                });
             });
         }
 
@@ -155,44 +162,49 @@ namespace IPCameraManufactureTool
 
         private void BackgroundSearchingCamera(object sender, DoWorkEventArgs e)
         {
+            BackgroundWorker worker = sender as BackgroundWorker;
+
             try
             {
-                string[] addr = { "192.168.0.100", "10.25.50.0", "10.25.50.1", "10.25.50.2", "10.25.50.3", "10.25.50.4" };
-                CameraAddress = "";
-                CameraGood = false;
-                progressMax = addr.Length + 1;
-                progressConfig = 0;
+                //string[] addr = { "192.168.0.100", "10.25.50.0", "10.25.50.1", "10.25.50.2", "10.25.50.3", "10.25.50.4" };
+                ////CameraAddress = "";
+                //if (!String.IsNullOrEmpty(CameraAddress))
+                //    return;
+                //CameraGood = false;
+                //progressMax = addr.Length + 1;
+                //progressConfig = 0;
 
-                foreach (string a in addr)
+                //foreach (string a in addr)
+                //{
+                //    progressConfig++;
+                //    if (progressConfig > progressMax)
+                //        progressConfig = progressMax;
+                //    //worker.ReportProgress(progressConfig * 100 / progressMax);
+
+                //    if (!String.IsNullOrEmpty(CameraAddress))
+                //        break;
+
+                //    labelOutput.Invoke((MethodInvoker)delegate
+                //    {
+                //        labelOutput.Text = "Searching camera at " + a + Environment.NewLine;
+                //    });
+
+                //    if (PingHost(a))
+                //    {
+                //        CameraAddress = a;
+                //        progressConfig = progressMax;
+                //    }
+                //}
+                while (true)
                 {
-                    progressConfig++;
-                    progressBar1.Invoke((MethodInvoker)delegate
-                    {
-                        if (progressMax < 1)
-                            progressMax = 1;
-                        if (progressConfig > progressMax)
-                            progressConfig = progressMax;
-                        progressBar1.Value = progressConfig * 100 / progressMax;
-                    });
+                    // Keep search in case have not found any camera
+                    if (String.IsNullOrEmpty(CameraAddress))
+                        SearchCamera("10.0.0.");
 
-                    if (!String.IsNullOrEmpty(CameraAddress))
-                        break;
-
-                    labelOutput.Invoke((MethodInvoker)delegate
-                    {
-                        labelOutput.Text = "Searching camera at " + a + Environment.NewLine;
-                    });
-
-                    if (PingHost(a))
-                    {
-                        CameraAddress = a;
-                        progressConfig = progressMax;
-
-                        var uri = new Uri("rtsp://" + a + "/h264");
-                        streamPlayerControl1.StartPlay(uri);
-                    }
+                    // report the progress
+                    worker.ReportProgress(1);
+                    Thread.Sleep(1000);
                 }
-
             }
 
             catch (HttpRequestException error)
@@ -203,17 +215,22 @@ namespace IPCameraManufactureTool
 
         private void SearchingCameraCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
+            progressBar1.Value = 100;
+
             if (String.IsNullOrEmpty(CameraAddress))
             {
-                // invoke search camera again
-                //BackgroundSearchingCamera(sender, null);
-                labelOutput.Text = "Cannot find any a camera so far." + Environment.NewLine + "Keeps searching...";
+                labelOutput.Text = "Cannot find any camera so far." + Environment.NewLine + "Keeps searching...";
+                //SearchCamera.RunWorkerAsync();
             }
             else
             {
                 labelOutput.Text = "Found camera at " + CameraAddress + Environment.NewLine
-    + "Trying to display the video stream from rtsp://" + CameraAddress + "/h264";
+                    + "Trying to display the video stream from rtsp://" + CameraAddress + "/h264";
+                var uri = new Uri("rtsp://" + CameraAddress + "/h264");
+                streamPlayerControl1.StartPlay(uri);
             }
+
+            this.ActiveControl = textBoxSerialNumber;
         }
 
         private string Config(string cmd)
@@ -247,10 +264,6 @@ namespace IPCameraManufactureTool
 
         private void BackgroundConfig(object sender, DoWorkEventArgs e)
         {
-            comboBox1.Enabled = false;
-            textBox1.Enabled = false;
-            button1.Enabled = false;
-
             try
             {
                 string newAddress = "10.25.50.0";
@@ -258,14 +271,25 @@ namespace IPCameraManufactureTool
                 progressConfig = 0;
                 progressMax = 100;
 
-                string logPath = @"C:\temp\" + SerialNumber + ".log";
-                string configPath = @"C:\temp\" + ModelNumber + ".txt";
+                Directory.CreateDirectory(@"C:\IPCameraConfigure\"+SerialNumber);
+                string logPath = @"C:\IPCameraConfigure\" + SerialNumber + @"\" + SerialNumber + ".log";
+                string configPath = @"C:\IPCameraConfigure\" + ModelNumber + ".txt";
                 log = new StreamWriter(logPath, true);  // Open the log file in  append mode
                 Log("");
                 Log("==");
                 Log("Start configure IP camera.");
                 Log("The configurations are read from " + configPath);
                 string cgi = "";
+
+                IPAddress hostIPAddress = IPAddress.Parse(CameraAddress);
+                byte[] macAddr = new byte[6];
+                int macAddrLen = macAddr.Length;
+                int r = SendARP(BitConverter.ToInt32(hostIPAddress.GetAddressBytes(), 0), 0, macAddr, ref macAddrLen);
+
+                string[] str = new string[macAddrLen];
+                for (int i = 0; i < macAddrLen; i++)
+                    str[i] = macAddr[i].ToString("x2");
+                Log(string.Join(":", str));
 
                 using (StreamReader conf = new StreamReader(configPath))
                 {
@@ -352,14 +376,14 @@ namespace IPCameraManufactureTool
 
         private void SerialNumberInput(object sender, EventArgs e)
         {
-            if (textBox1.Text.Length == 8)
+            if (textBoxSerialNumber.Text.Length == 8)
             {
-                SerialNumber = textBox1.Text;
+                SerialNumber = textBoxSerialNumber.Text;
             }
             else
                 SerialNumber = "";
 
-            button1.Enabled = !(String.IsNullOrEmpty(SerialNumber) || String.IsNullOrEmpty(CameraAddress)) && CameraGood; 
+            buttonConfig.Enabled = !(String.IsNullOrEmpty(SerialNumber) || String.IsNullOrEmpty(CameraAddress)) && CameraGood; 
 
         }
 
@@ -367,29 +391,65 @@ namespace IPCameraManufactureTool
         {
             ModelNumber = comboBox1.Text;
             CameraAddress = "";
-            if (SearchingCamera.IsBusy)
-                SearchingCamera.CancelAsync();
-            SearchingCamera.RunWorkerAsync();
+            if (!SearchingCamera.IsBusy)
+                SearchingCamera.RunWorkerAsync();
+            //SearchCamera("10.0.0.");
+            this.ActiveControl = textBoxSerialNumber;
         }
 
         private void SearchCameraProgressChanged(object sender, ProgressChangedEventArgs e)
         {
-            progressBar1.Value = e.ProgressPercentage;
+            int progress = progressBar1.Value;
+            // Check if the camera found or not
+            if (String.IsNullOrEmpty(CameraAddress))
+            {
+                labelOutput.Text = "Have not found any IP camera." + Environment.NewLine
+                    + "Please plug in the IP camera and check the connection" + Environment.NewLine
+                    + "Keep searching...";
+                buttonConfig.Enabled = false;
+
+                // grow the progress
+                progress += 10;
+                if (progress >= 100)
+                    progress = 10;
+            }
+            else
+            {
+                // Play the camera strem
+                if (!streamPlayerControl1.IsPlaying)
+                {
+                    string str = CameraStreamUri.Replace("$IP", CameraAddress);
+                    var uri = new Uri(str);
+                    streamPlayerControl1.StartPlay(uri);
+                    labelOutput.Text = "Find the camera at " + CameraAddress + Environment.NewLine
+                        + "Try to play the stream from " + str;
+                }
+                progress = 100;
+            }
+
+            // show the progress of searching
+            progressBar1.Value = progress;
         }
 
         private void ButtonConfigClick(object sender, EventArgs e)
         {
             if (!backgroundConfig.IsBusy)
             {
+                comboBox1.Enabled = false;
+                textBoxSerialNumber.Enabled = false;
+                buttonConfig.Enabled = false;
+
                 backgroundConfig.RunWorkerAsync();
-                button1.Enabled = false;
             }
         }
 
         private void StreamStarted(object sender, EventArgs e)
         {
-            labelOutput.Text = "Camera at rtsp://" + CameraAddress + " is playing well.";
+            labelOutput.Text = "Camera stream from " + CameraAddress + " is playing well.";
             CameraGood = true;
+
+            // Enable the config button in case the Serial number is valid
+            buttonConfig.Enabled = !String.IsNullOrEmpty(SerialNumber);
         }
 
         private void StreamFailed(object sender, WebEye.Controls.WinForms.StreamPlayerControl.StreamFailedEventArgs e)
@@ -400,15 +460,54 @@ namespace IPCameraManufactureTool
                 CameraAddress = "";
 
                 // invoke search camera
-                BackgroundSearchingCamera(sender, null);
+                //BackgroundSearchingCamera(sender, null);
             }
 
-            button1.Enabled = false;
+            buttonConfig.Enabled = false;
             comboBox1.Enabled = true;
-            textBox1.Enabled = true;
+            textBoxSerialNumber.Enabled = true;
 
             CameraGood = false;
         }
 
+        private void loadConfigForm(object sender, EventArgs e)
+        {
+            // Searches the camera config files in the target folder and add them to the combo list
+            string[] filePaths = Directory.GetFiles(@"c:\temp\", "*.cfg");
+            if (filePaths.Length > 0)
+            {
+                comboBox1.Items.Clear();
+                foreach (string a in filePaths)
+                    comboBox1.Items.Add(Path.GetFileNameWithoutExtension(a));
+            }
+            comboBox1.SelectedItem = comboBox1.Items[0];
+        }
+
+        [DllImport("iphlpapi.dll", ExactSpelling = true)]
+        public static extern int SendARP(int DestIP, int SrcIP, [Out] byte[] pMacAddr, ref int PhyAddrLen);
+
+        private void StreamStopped(object sender, EventArgs e)
+        {
+            if (configSuccess)
+            {
+                labelOutput.Text = "Please plug a new camera if you want to configure another camera.";
+                CameraAddress = "";
+
+                // invoke search camera
+                BackgroundSearchingCamera(sender, null);
+            }
+
+            buttonConfig.Enabled = false;
+            comboBox1.Enabled = true;
+            textBoxSerialNumber.Enabled = true;
+            this.ActiveControl = textBoxSerialNumber;
+
+            CameraGood = false;
+        }
+
+        private void QRCodeImageClicked(object sender, EventArgs e)
+        {
+            SearchCamera("10.0.0.");
+        }
     }
 }
