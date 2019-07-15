@@ -38,7 +38,10 @@
             this.backgroundConfig = new System.ComponentModel.BackgroundWorker();
             this.SearchingCamera = new System.ComponentModel.BackgroundWorker();
             this.pictureBox1 = new System.Windows.Forms.PictureBox();
+            this.pictureBoxCameraModel = new System.Windows.Forms.PictureBox();
+            this.labelCameraDescription = new System.Windows.Forms.Label();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.pictureBoxCameraModel)).BeginInit();
             this.SuspendLayout();
             // 
             // comboBox1
@@ -57,7 +60,7 @@
             // 
             // textBoxSerialNumber
             // 
-            this.textBoxSerialNumber.Location = new System.Drawing.Point(27, 216);
+            this.textBoxSerialNumber.Location = new System.Drawing.Point(27, 274);
             this.textBoxSerialNumber.Margin = new System.Windows.Forms.Padding(2);
             this.textBoxSerialNumber.Name = "textBoxSerialNumber";
             this.textBoxSerialNumber.Size = new System.Drawing.Size(113, 20);
@@ -69,9 +72,9 @@
             // 
             this.labelOutput.AutoSize = true;
             this.labelOutput.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.labelOutput.Location = new System.Drawing.Point(24, 252);
+            this.labelOutput.Location = new System.Drawing.Point(24, 310);
             this.labelOutput.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
-            this.labelOutput.MaximumSize = new System.Drawing.Size(160, 300);
+            this.labelOutput.MaximumSize = new System.Drawing.Size(140, 290);
             this.labelOutput.Name = "labelOutput";
             this.labelOutput.Size = new System.Drawing.Size(46, 17);
             this.labelOutput.TabIndex = 2;
@@ -131,18 +134,39 @@
             // pictureBox1
             // 
             this.pictureBox1.Image = ((System.Drawing.Image)(resources.GetObject("pictureBox1.Image")));
-            this.pictureBox1.Location = new System.Drawing.Point(27, 163);
+            this.pictureBox1.Location = new System.Drawing.Point(27, 221);
             this.pictureBox1.Name = "pictureBox1";
             this.pictureBox1.Size = new System.Drawing.Size(113, 48);
             this.pictureBox1.SizeMode = System.Windows.Forms.PictureBoxSizeMode.StretchImage;
             this.pictureBox1.TabIndex = 9;
             this.pictureBox1.TabStop = false;
             // 
+            // pictureBoxCameraModel
+            // 
+            this.pictureBoxCameraModel.Location = new System.Drawing.Point(27, 95);
+            this.pictureBoxCameraModel.Name = "pictureBoxCameraModel";
+            this.pictureBoxCameraModel.Size = new System.Drawing.Size(113, 113);
+            this.pictureBoxCameraModel.SizeMode = System.Windows.Forms.PictureBoxSizeMode.StretchImage;
+            this.pictureBoxCameraModel.TabIndex = 10;
+            this.pictureBoxCameraModel.TabStop = false;
+            // 
+            // labelCameraDescription
+            // 
+            this.labelCameraDescription.AutoSize = true;
+            this.labelCameraDescription.Location = new System.Drawing.Point(24, 45);
+            this.labelCameraDescription.MaximumSize = new System.Drawing.Size(140, 0);
+            this.labelCameraDescription.Name = "labelCameraDescription";
+            this.labelCameraDescription.Size = new System.Drawing.Size(102, 13);
+            this.labelCameraDescription.TabIndex = 11;
+            this.labelCameraDescription.Text = "Camera descriptions";
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1008, 561);
+            this.Controls.Add(this.labelCameraDescription);
+            this.Controls.Add(this.pictureBoxCameraModel);
             this.Controls.Add(this.pictureBox1);
             this.Controls.Add(this.streamPlayerControl1);
             this.Controls.Add(this.progressBar1);
@@ -155,6 +179,7 @@
             this.Text = "IP Camera Configuration Tool";
             this.Load += new System.EventHandler(this.loadConfigForm);
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.pictureBoxCameraModel)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -171,6 +196,8 @@
         private System.ComponentModel.BackgroundWorker backgroundConfig;
         private System.ComponentModel.BackgroundWorker SearchingCamera;
         private System.Windows.Forms.PictureBox pictureBox1;
+        private System.Windows.Forms.PictureBox pictureBoxCameraModel;
+        private System.Windows.Forms.Label labelCameraDescription;
     }
 }
 
