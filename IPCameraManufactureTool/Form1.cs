@@ -28,7 +28,8 @@ namespace IPCameraManufactureTool
 
         private string ModelNumber;
         private string SerialNumber = "";
-        private bool configSuccess = true;
+        private string WorkPath = @"C:\IPCameraConfig\";
+        private bool configSuccess = false;
         private bool CameraGood = false;
         private StreamWriter log;
         private string CameraAddress;
@@ -66,6 +67,7 @@ namespace IPCameraManufactureTool
         private void ConfigProgressChanged(object sender, ProgressChangedEventArgs e)
         {
             progressBar1.Value = e.ProgressPercentage;
+            //configSuccess = !String.IsNullOrEmpty(CameraAddress);
         }
 
         private void ConfigCompleted(object sender, RunWorkerCompletedEventArgs e)
@@ -74,6 +76,12 @@ namespace IPCameraManufactureTool
             {
                 labelOutput.Text = ModelNumber + " camera " + SerialNumber + " has been configured successfully." + Environment.NewLine
                     + Environment.NewLine + "Please unplug the camera." + Environment.NewLine;
+
+                // save the image after configuration
+                Bitmap image0 = streamPlayerControl1.GetCurrentFrame();
+                string imageFile = WorkPath + SerialNumber + @"\" + SerialNumber + "-1.jpg";
+                image0.Save(imageFile, System.Drawing.Imaging.ImageFormat.Jpeg);
+                Log("Saved proof image from the camera after configuration as " + imageFile);
 
                 Log("Configuration accomplished.");
             }
@@ -86,6 +94,7 @@ namespace IPCameraManufactureTool
 
             Log("==");
             log.Close();
+            Console.Beep();
 
             comboBox1.Enabled = true;
             textBoxSerialNumber.Enabled = true;
@@ -121,8 +130,6 @@ namespace IPCameraManufactureTool
 
         private async void SearchCamera(string baseIP)
         {
-            CameraAddress = "";
-
             var tasks = new List<Task>();
             string ip;
 
@@ -139,10 +146,10 @@ namespace IPCameraManufactureTool
 
             await Task.WhenAll(tasks).ContinueWith(t =>
             {
-                labelOutput.Invoke((MethodInvoker)delegate
-                {
-                    labelOutput.Text = "Found!";
-                });
+                //labelOutput.Invoke((MethodInvoker)delegate
+                //{
+                //    //labelOutput.Text = "Found!";
+                //});
             });
         }
 
@@ -199,10 +206,15 @@ namespace IPCameraManufactureTool
                 {
                     // Keep search in case have not found any camera
                     if (String.IsNullOrEmpty(CameraAddress))
-                        SearchCamera("10.0.0.");
+                    {
+                        SearchCamera("10.25.50.");
+                        // report the progress
+                        if (String.IsNullOrEmpty(CameraAddress))
+                            worker.ReportProgress(1);
+                        else
+                            worker.ReportProgress(100);
+                    }
 
-                    // report the progress
-                    worker.ReportProgress(1);
                     Thread.Sleep(1000);
                 }
             }
@@ -213,6 +225,47 @@ namespace IPCameraManufactureTool
             }
         }
 
+        private void SearchCameraProgressChanged(object sender, ProgressChangedEventArgs e)
+        {
+            // Do nothing during configuration
+            if (backgroundConfig.IsBusy)
+                return;
+
+            int progress = progressBar1.Value;
+            // Check if the camera found or not
+            if (String.IsNullOrEmpty(CameraAddress))
+            //if (e.ProgressPercentage < 100)
+            {
+                labelOutput.Text = "Have not found any IP camera." + Environment.NewLine
+                    + "Please plug in the IP camera and check the connection" + Environment.NewLine
+                    + "Keep searching...";
+                buttonConfig.Enabled = false;
+
+                // grow the progress
+                progress += 10;
+                if (progress >= 100)
+                    progress = 10;
+            }
+            else
+            {
+                // Play the camera strem
+                if (!streamPlayerControl1.IsPlaying)
+                {
+                    string str = CameraStreamUri.Replace("$IP", CameraAddress);
+                    var uri = new Uri(str);
+                    streamPlayerControl1.StartPlay(uri);
+                    labelOutput.Text = "Find the camera at " + CameraAddress + Environment.NewLine
+                        + "Try to play the stream from " + str;
+                }
+
+                Console.Beep();
+                progress = 100;
+            }
+
+            // show the progress of searching
+            progressBar1.Value = progress;
+        }
+
         private void SearchingCameraCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
             progressBar1.Value = 100;
@@ -220,6 +273,7 @@ namespace IPCameraManufactureTool
             if (String.IsNullOrEmpty(CameraAddress))
             {
                 labelOutput.Text = "Cannot find any camera so far." + Environment.NewLine + "Keeps searching...";
+                buttonConfig.Enabled = false;
                 //SearchCamera.RunWorkerAsync();
             }
             else
@@ -271,10 +325,7 @@ namespace IPCameraManufactureTool
                 progressConfig = 0;
                 progressMax = 100;
 
-                Directory.CreateDirectory(@"C:\IPCameraConfigure\"+SerialNumber);
-                string logPath = @"C:\IPCameraConfigure\" + SerialNumber + @"\" + SerialNumber + ".log";
-                string configPath = @"C:\IPCameraConfigure\" + ModelNumber + ".txt";
-                log = new StreamWriter(logPath, true);  // Open the log file in  append mode
+                string configPath = WorkPath + ModelNumber + ".cfg";
                 Log("");
                 Log("==");
                 Log("Start configure IP camera.");
@@ -391,54 +442,32 @@ namespace IPCameraManufactureTool
         {
             ModelNumber = comboBox1.Text;
             CameraAddress = "";
+            CameraGood = false;
+
             if (!SearchingCamera.IsBusy)
                 SearchingCamera.RunWorkerAsync();
-            //SearchCamera("10.0.0.");
             this.ActiveControl = textBoxSerialNumber;
-        }
-
-        private void SearchCameraProgressChanged(object sender, ProgressChangedEventArgs e)
-        {
-            int progress = progressBar1.Value;
-            // Check if the camera found or not
-            if (String.IsNullOrEmpty(CameraAddress))
-            {
-                labelOutput.Text = "Have not found any IP camera." + Environment.NewLine
-                    + "Please plug in the IP camera and check the connection" + Environment.NewLine
-                    + "Keep searching...";
-                buttonConfig.Enabled = false;
-
-                // grow the progress
-                progress += 10;
-                if (progress >= 100)
-                    progress = 10;
-            }
-            else
-            {
-                // Play the camera strem
-                if (!streamPlayerControl1.IsPlaying)
-                {
-                    string str = CameraStreamUri.Replace("$IP", CameraAddress);
-                    var uri = new Uri(str);
-                    streamPlayerControl1.StartPlay(uri);
-                    labelOutput.Text = "Find the camera at " + CameraAddress + Environment.NewLine
-                        + "Try to play the stream from " + str;
-                }
-                progress = 100;
-            }
-
-            // show the progress of searching
-            progressBar1.Value = progress;
         }
 
         private void ButtonConfigClick(object sender, EventArgs e)
         {
+            Directory.CreateDirectory(WorkPath + SerialNumber);
+            string logPath = WorkPath + SerialNumber + @"\" + SerialNumber + ".log";
+            log = new StreamWriter(logPath, true);  // Open the log file in  append mode
+
             if (!backgroundConfig.IsBusy)
             {
                 comboBox1.Enabled = false;
                 textBoxSerialNumber.Enabled = false;
                 buttonConfig.Enabled = false;
 
+                // save the image before configuration
+                Bitmap image0 = streamPlayerControl1.GetCurrentFrame();
+                string imageFile = WorkPath + SerialNumber + @"\" + SerialNumber + "-0.jpg";
+                image0.Save(imageFile, System.Drawing.Imaging.ImageFormat.Jpeg);
+                Log("Saved proof image from the camera before configuration as " + imageFile);
+
+                configSuccess = true;
                 backgroundConfig.RunWorkerAsync();
             }
         }
@@ -449,31 +478,34 @@ namespace IPCameraManufactureTool
             CameraGood = true;
 
             // Enable the config button in case the Serial number is valid
-            buttonConfig.Enabled = !String.IsNullOrEmpty(SerialNumber);
+            if (!backgroundConfig.IsBusy)
+            {
+                buttonConfig.Enabled = !String.IsNullOrEmpty(SerialNumber);
+                progressBar1.Value = 0;
+            }
+            else
+                buttonConfig.Enabled = false;
         }
 
         private void StreamFailed(object sender, WebEye.Controls.WinForms.StreamPlayerControl.StreamFailedEventArgs e)
         {
             if (configSuccess)
-            {
                 labelOutput.Text = "Please plug a new camera if you want to configure another camera.";
-                CameraAddress = "";
 
-                // invoke search camera
-                //BackgroundSearchingCamera(sender, null);
-            }
-
+            progressBar1.Value = 0;
             buttonConfig.Enabled = false;
             comboBox1.Enabled = true;
             textBoxSerialNumber.Enabled = true;
 
+            CameraAddress = "";
             CameraGood = false;
         }
 
+        // using the load form to update the combo box list according to the  
         private void loadConfigForm(object sender, EventArgs e)
         {
             // Searches the camera config files in the target folder and add them to the combo list
-            string[] filePaths = Directory.GetFiles(@"c:\temp\", "*.cfg");
+            string[] filePaths = Directory.GetFiles(WorkPath, "*.cfg");
             if (filePaths.Length > 0)
             {
                 comboBox1.Items.Clear();
@@ -483,25 +515,23 @@ namespace IPCameraManufactureTool
             comboBox1.SelectedItem = comboBox1.Items[0];
         }
 
+        // to handle arp using system dll
         [DllImport("iphlpapi.dll", ExactSpelling = true)]
         public static extern int SendARP(int DestIP, int SrcIP, [Out] byte[] pMacAddr, ref int PhyAddrLen);
 
+        // to handle the unplug of IP camera while playing
         private void StreamStopped(object sender, EventArgs e)
         {
             if (configSuccess)
-            {
                 labelOutput.Text = "Please plug a new camera if you want to configure another camera.";
-                CameraAddress = "";
 
-                // invoke search camera
-                BackgroundSearchingCamera(sender, null);
-            }
-
+            progressBar1.Value = 0;
             buttonConfig.Enabled = false;
             comboBox1.Enabled = true;
             textBoxSerialNumber.Enabled = true;
             this.ActiveControl = textBoxSerialNumber;
 
+            CameraAddress = "";
             CameraGood = false;
         }
 
