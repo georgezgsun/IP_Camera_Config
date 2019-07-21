@@ -30,21 +30,20 @@ namespace IPCameraManufactureTool
         private static string ModelNumber;
         private static string SerialNumber = "";
         private static string WorkPath = @"C:\IPCameraConfig\";
-        private static int configStatus = 0; // 0 not start, 1 configuring, 2 configuring with failures, 3 completed
-        //private static bool CameraGood = false;
+        private static int configStatus = 0; // 0 not start, 1 configuring, 2 completed, others configuring with failures
         private static StreamWriter log;
         private static string CameraCurrentAddress = "";
         private static string CameraConfigAddress = "";
         private static string CameraOrigAddress = "";
         private static string CameraAuth = "";
-        private static string CameraStreamUri = "rtsp://$IP/h264";
+        private static string CameraStreamUri = "rtsp://$(IP)/h264"; // This is a standard format
         private static string CameraFirmware = "";
         private static string[] Cgi;
         private static int TotalCgis = 0;
 
         static object lockObj = new object();
 
-        public bool Log(string logContent)
+        public bool Log(string logContent = "")
         {
             if (String.IsNullOrEmpty(logContent))
             {
@@ -67,68 +66,26 @@ namespace IPCameraManufactureTool
             return true;
         }
 
-        // Config the camera with a cgi command specified in cmd
-        private string Config(string cmd)
+        // Config the camera with a cgi command in format http:\\hostname_or_ip\cgi_xxx?param0_xxx, Auth is the base64 encoded
+        private string Config(string cmd, string Auth = "")
         {
-            string responseBody;
-            bool CheckFirmware = false;
-            bool IPAddreesChanged = false;
-
             try
             {
-                if (cmd.Contains("$CheckFirmware"))
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(cmd);
+                if (!String.IsNullOrEmpty(Auth))
                 {
-                    CheckFirmware = true;
-//                    Regex rx = new Regex(@"$CheckFirmware\s*"); // match zero or more white-space
-                    cmd = cmd.Replace("$CheckFirmware", "");                    
-                }
-                else if (cmd.Contains("$IP"))
-                {
-                    cmd = cmd.Replace("$IP", CameraConfigAddress + "0"); // new IP address need to append a 0 
-                    IPAddreesChanged = true;
-                }
-
-                cmd = cmd.Trim();
-                Console.WriteLine("Send command: " + cmd);
-                Log("Send command: " + cmd);
-                HttpWebRequest request = (HttpWebRequest) WebRequest.Create("http://" + CameraCurrentAddress + cmd);
-                if (!String.IsNullOrEmpty(CameraAuth))
-                {
-                    request.Headers.Add("Authorization", "Basic " + CameraAuth);
+                    request.Headers.Add("Authorization", "Basic " + Auth);
                     Thread.Sleep(100);
                 }
                 WebResponse response = request.GetResponse();
                 StreamReader inStream = new StreamReader(response.GetResponseStream());
-                responseBody = inStream.ReadToEnd();
-
-                if (IPAddreesChanged)
-                    CameraCurrentAddress = CameraConfigAddress + "0";
+                return inStream.ReadToEnd();
             }
 
             catch (HttpRequestException error)
             {
-                responseBody = error.Message;
-                Console.WriteLine("\nException Message :{0} ", responseBody);
-                //configSuccess = false;
-                configStatus = 2;
+                return "Error " + error.Message;
             }
-
-            Console.WriteLine("Get response: " + responseBody.Replace("<br>", "\n"));
-            Log("Get response: " + responseBody.Replace("<br>", "\r\n"));
-
-            if (CheckFirmware)
-            {
-                if (responseBody.Contains(CameraFirmware))
-                    Log("The camera has a correct firmware.");
-                else
-                {
-                    Log("Error. The camera has a different firmware.");
-                    //configSuccess = false;
-                    configStatus = 2;
-                }
-            }
-
-            return responseBody;
         }
 
         // background worker used to make all the configurations of a camera
@@ -140,11 +97,10 @@ namespace IPCameraManufactureTool
             try
             {
                 string cgi = "";
-                //CameraAuth = System.Convert.ToBase64String(System.Text.Encoding.GetEncoding("ISO-8859-1").GetBytes("root:root"));
 
-                Log("");
+                Log();
                 Log("==");
-                Log("Start configure IP camera.");
+                Log("Start configuring a new IP camera.");
 
                 // Get the MAC address of the camera using arp
                 IPAddress hostIPAddress = IPAddress.Parse(CameraCurrentAddress);
@@ -162,19 +118,22 @@ namespace IPCameraManufactureTool
                 Bitmap picture = streamPlayerControl1.GetCurrentFrame();
                 string imageFile = WorkPath + SerialNumber + @"\" + SerialNumber + "-0.jpg";
                 picture.Save(imageFile, System.Drawing.Imaging.ImageFormat.Jpeg);
-                Log("Saved proof image of the camera before the configuration as " + imageFile);
+                Log("Saved a proof image of the camera before the configuration as " + imageFile);
 
                 string ln;
+                bool CheckFirmware = false;
+ 
                 for (int i = 0; i < TotalCgis; i++)
                 {
                     // report grogress
-                    worker.ReportProgress(100 * (i+1) / TotalCgis);
+                    worker.ReportProgress(i);
 
                     // Get a new command
                     ln = Cgi[i];
+                    CheckFirmware = false;
 
-                    // it is a new cgi
-                    if (ln.Substring(0,1) == "/")
+                    // it is a new common cgi, which ends with a ?
+                    if (ln.Substring(ln.Length-1,1) == "?")
                     {
                         cgi = ln;
                         continue;
@@ -188,55 +147,112 @@ namespace IPCameraManufactureTool
                         continue;
                     }
 
-                    if (ln.Contains("$T"))
+                    // it is a date and time setting
+                    if (ln.Contains("$(T"))
                     {
                         // parse the date and time settings
                         DateTime dt = DateTime.Now;
                         string DT = dt.ToString("yyyy.MM.dd.hh.mm.ss");
 
-                        ln = ln.Replace("$T0", DT);
-                        ln = ln.Replace("$Ty", DT.Substring(0, 4));
-                        ln = ln.Replace("$TM", DT.Substring(5, 2));
-                        ln = ln.Replace("$Td", DT.Substring(8, 2));
-                        ln = ln.Replace("$Th", DT.Substring(11, 2));
-                        ln = ln.Replace("$Tm", DT.Substring(14, 2));
-                        ln = ln.Replace("$Ts", DT.Substring(17, 2));
+                        ln = ln.Replace("$(T0)", DT);
+                        ln = ln.Replace("$(Ty)", DT.Substring(0, 4));
+                        ln = ln.Replace("$(TM)", DT.Substring(5, 2));
+                        ln = ln.Replace("$(Td)", DT.Substring(8, 2));
+                        ln = ln.Replace("$(Th)", DT.Substring(11, 2));
+                        ln = ln.Replace("$(Tm)", DT.Substring(14, 2));
+                        ln = ln.Replace("$(Ts)", DT.Substring(17, 2));
                     }
-                    else if (ln.Contains("$Sleep="))
+                    else if (ln.Contains("$Wait="))
                     {
                         // To stop the stream play
-                        worker.ReportProgress(200);
+                        //worker.ReportProgress(-1);
 
-                        ln = ln.Replace("$Sleep=", "");
-                        int s = 1;
+                        ln = ln.Replace("$Wait=", "");
+                        int s = 1; // default value for sleep is 1s 
                         if (!Int32.TryParse(ln, out s))
                             Log("Warning: Sleep time is not specified correct at line " + s.ToString());
-                        Log(String.Format("Sleep for {0} seconds", s));
+                        Log(String.Format("Wait for the resume of the camera stream on a different address in {0} seconds.", s));
 
-                        // Sleep s seconds
-                        Thread.Sleep(s * 1000);
-
-                        // Restart the play of camera stream
-                        worker.ReportProgress(300);
-                        while (!streamPlayerControl1.IsPlaying)
+                        // wait for the stream to be resumed or timeout
+                        do
                         {
                             Thread.Sleep(1000);  //?
                             s--;
                             if (s < 0)
                             {
-                                Log("The camera has not resumed in " + ln + "s.");
-                                break;
+                                Log("The camera play does not resume in " + ln + "s. Configuration failed.");
+                                configStatus = 5;  // config error of stream play not resumed
+                                return;
                             }
-                        }
+                        } while (!streamPlayerControl1.IsPlaying);
 
-                        Log("The camera play resumed.");
-                        Log("");
+                        Log("The camera play has been resumed.");
+                        Log();
                         continue;
                     }
-                    else if (ln.Contains("$SN"))
-                        ln = ln.Replace("$SN", SerialNumber);
+                    else if (ln.Contains("$(SN)"))
+                        ln = ln.Replace("$(SN)", SerialNumber);
+                    else if (ln.Contains("$CheckFirmware"))
+                    {
+                        CheckFirmware = true;
+                        ln = ln.Replace("$CheckFirmware", "");
+                    }
+                    else if (ln.Contains("$Sleep="))
+                    {
+                        ln = ln.Replace("$Sleep=", "");
+                        int s = 1; // default value for sleep is 1s 
+                        if (!Int32.TryParse(ln, out s))
+                            Log("Warning: Sleep time is not specified correct at line " + s.ToString());
+                        Log(String.Format("Sleep {0} seconds.", s));
+                        Log();
 
-                    Config(cgi + ln);
+                        Thread.Sleep(s);
+                        continue;
+                    }
+
+                    ln = ln.Trim();
+ 
+                    // check if it is an incompleted cgi
+                    if (ln.Substring(0, 1) != "/")
+                        ln = cgi + ln;
+                    ln = "http://" + CameraCurrentAddress + ln;
+
+                    // check if it is going to change the IP address
+                    if (ln.Contains("$(IP)"))
+                    {
+                        // update the current camera address
+                        CameraCurrentAddress = CameraConfigAddress + "0";
+                        ln = ln.Replace("$(IP)", CameraCurrentAddress);
+                    }
+
+                    Console.WriteLine("Send config command: " + ln);
+                    Log("Send config command: " + ln);
+
+                    // config one line and read the results
+                    ln = Config(ln, CameraAuth);
+                    if (ln.Length > 6 && ln.Substring(0, 6) == "Error ")
+                        configStatus = 4;  // Config error of getting exceptions
+
+                    Console.WriteLine("Get response: " + ln.Replace("<br>", "\n"));
+                    Log("Get response: " + ln);
+                    if (ln.Length < 10)
+                        Log();
+
+                    if (CheckFirmware)
+                    {
+                        Log();
+
+                        if (ln.Contains(CameraFirmware))
+                            Log("The camera has a correct firmware.");
+                        else
+                        {
+                            Log("Error. The camera has a different firmware.");
+                            configStatus = 3;  // Firmware does not match
+                        }
+                    }
+
+                    if (configStatus > 1)
+                        return;
                 }
 
                 // save the image after configuration
@@ -248,46 +264,38 @@ namespace IPCameraManufactureTool
                     Log("Saved proof image from the camera after configuration as " + imageFile);
                 }
                 else
+                {
                     Log("Cannot saved proof image from the camera after configuration.");
-
-                if (configStatus == 1)
-                    Log("Configuration accomplished.");
-                else
-                    Log("Configuration failed.");
-
-                Log("==");
-                log.Close();
+                    configStatus = 5;
+                }
             }
 
             catch (HttpRequestException error)
             {
                 Console.WriteLine("\nException Message :{0} ", error.Message);
             }
-
         }
 
         // This is called when the background worker report grogress
         private void ConfigProgressChanged(object sender, ProgressChangedEventArgs e)
         {
-            if (e.ProgressPercentage <= 100)
-                progressBar1.Value = e.ProgressPercentage;
-            else if (e.ProgressPercentage == 200)
+            if (e.ProgressPercentage < 0 || e.ProgressPercentage >= TotalCgis)
             {
-                labelOutput.Text = "Stop the play of camera stream.";
-                Log("Get command to stop playing of camera stream.");
+                labelOutput.Text = "Camera address changed." 
+                    + Environment.NewLine
+                    + "Waiting for the video stream to resume...";
+                Log("Try to stop playing of camera stream.");
+
                 if (streamPlayerControl1.IsPlaying)
                 {
                     streamPlayerControl1.Stop();
-                    Log("There is an on-going play, so stop it.");
+                    Log("Find an on-going play. Now stop it.");
                 }
             }
-            else if (e.ProgressPercentage == 300)
+            else 
             {
-                string str = CameraStreamUri.Replace("$IP", CameraCurrentAddress);
-                var uri = new Uri(str);
-                streamPlayerControl1.StartPlay(uri);
-                labelOutput.Text = "Try to resume the play of stream from " + str;
-                Log(labelOutput.Text);
+                labelOutput.Text = String.Format("Configuration in progress {0}/{1}...", e.ProgressPercentage, TotalCgis);
+                progressBar1.Value = 100 * (e.ProgressPercentage + 1) / TotalCgis;
             }
         }
 
@@ -295,15 +303,44 @@ namespace IPCameraManufactureTool
         private void ConfigCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
             if (configStatus == 1)
-                labelOutput.Text = ModelNumber + " camera " + SerialNumber + " has been configured successfully." + Environment.NewLine
-                    + Environment.NewLine + "Please unplug the camera." + Environment.NewLine;
-            else
-                labelOutput.Text = "Cannot configure this " + ModelNumber + " IP camera."
-                    + Environment.NewLine + "Please double check the cable connection and try again." + Environment.NewLine;
+            {
+                labelOutput.Text = ModelNumber 
+                    + " camera " 
+                    + SerialNumber 
+                    + " has been configured successfully."
+                    + Environment.NewLine + Environment.NewLine 
+                    + "Please unplug the camera.";
+                Log("Configuration accomplished.");
+                textBoxSerialNumber.Text = "";
+                configStatus = 2;
+            }
+            else if (configStatus == 3)
+            {
+                labelOutput.Text = "This camera has a different firmware." 
+                    + Environment.NewLine + Environment.NewLine 
+                    + "Please burn the correct firmware before configuration.";
+                Log("Configuration failed because of firmware incorrect.");
+            }
+            else if (configStatus == 4)
+            {
+                labelOutput.Text = "Encounter exceptions while cofiguration." 
+                    + Environment.NewLine + Environment.NewLine 
+                    + "Please contact a develop engineer.";
+                Log("Configuration failed because of encountering exceptions.");
+            }
+            else if (configStatus == 5)
+            {
+                labelOutput.Text = "The video stream is not resumed in given time." 
+                    + Environment.NewLine + Environment.NewLine 
+                    + "Please try again or contact a develop engineer.";
+                Log("Configuration failed because of the stream does not resumed.");
+            }
+
+            Log("==");
+            log.Close();
 
             // beep and update the status 
             Console.Beep();
-            configStatus = 3;
             comboBox1.Enabled = true;
             textBoxSerialNumber.Enabled = true;
             buttonConfig.Enabled = false;
@@ -383,20 +420,23 @@ namespace IPCameraManufactureTool
 
             try
             {
+                // keep searching when there is no camera
                 while (true)
-                {
-                    // Keep search in case have not found any camera
+                {                    
                     if (String.IsNullOrEmpty(CameraCurrentAddress))
                     {
-                        SearchCamera(CameraConfigAddress);
-                        // report the progress
-                        if (String.IsNullOrEmpty(CameraCurrentAddress))
-                            worker.ReportProgress(1);
-                        else
-                            worker.ReportProgress(100);
+                        // search for new camera when the camera address is empty
+                        SearchCamera(CameraConfigAddress);  // search for camera in given range
+                        worker.ReportProgress(1);  // report progress trying to setup the stream play
+                    }
+                    else if (!streamPlayerControl1.IsPlaying)
+                    {
+                        // has the camera address but the stream is not playing
+                        Thread.Sleep(2000); // give extra 2s wait for the setup of stream play
+                        worker.ReportProgress(1);  //report progress trying to setup the stream play
                     }
 
-                    Thread.Sleep(1000);
+                    Thread.Sleep(2000);  // sleep to reduce CPU usage
                 }
             }
 
@@ -409,38 +449,39 @@ namespace IPCameraManufactureTool
         // this is called when IP camera searching makes a progress
         private void SearchCameraProgressChanged(object sender, ProgressChangedEventArgs e)
         {
-            // Do nothing during configuration
-            if (backgroundConfig.IsBusy)
-                return;
-
             int progress = progressBar1.Value;
-            // Check if the camera found or not
+
+            // Check if the camera been found or not
             if (String.IsNullOrEmpty(CameraCurrentAddress))
-            //if (e.ProgressPercentage < 100)
             {
-                labelOutput.Text = "Have not found any IP camera." + Environment.NewLine
-                    + "Please plug in the IP camera and check the connection" + Environment.NewLine
+                labelOutput.Text = "Have not found any IP camera." 
+                    + Environment.NewLine
+                    + "Please plug in the IP camera and check the connection." 
+                    + Environment.NewLine
                     + "Keep searching...";
                 buttonConfig.Enabled = false;
 
                 // grow the progress
                 progress += 10;
-                if (progress >= 100)
-                    progress = 10;
+                if (progress > 100)
+                    progress = 0;
             }
             else
             {
-                // Play the camera strem
+                // Trying to start the camera stream playing
                 if (!streamPlayerControl1.IsPlaying)
                 {
-                    string str = CameraStreamUri.Replace("$IP", CameraCurrentAddress);
+                    // This is the only place to start stream playing.
+                    string str = CameraStreamUri.Replace("$(IP)", CameraCurrentAddress);
                     var uri = new Uri(str);
                     streamPlayerControl1.StartPlay(uri);
-                    labelOutput.Text = "Find the camera at " + CameraCurrentAddress + Environment.NewLine
-                        + "Try to play the stream from " + str;
+                    labelOutput.Text = "Find the camera at " 
+                        + CameraCurrentAddress 
+                        + Environment.NewLine
+                        + "Start to play the stream from " 
+                        + str;
                 }
 
-                Console.Beep();
                 progress = 100;
             }
 
@@ -448,26 +489,12 @@ namespace IPCameraManufactureTool
             progressBar1.Value = progress;
         }
 
-        // this is called when IP camera searching has completed. In new design, the searching will nevere end.
+        // this is called when IP camera searching has completed. In new design, this shall not be reached.
         private void SearchingCameraCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
             progressBar1.Value = 100;
 
-            if (String.IsNullOrEmpty(CameraCurrentAddress))
-            {
-                labelOutput.Text = "Cannot find any camera so far." + Environment.NewLine + "Keeps searching...";
-                buttonConfig.Enabled = false;
-                //SearchCamera.RunWorkerAsync();
-            }
-            else
-            {
-                labelOutput.Text = "Found camera at " + CameraCurrentAddress + Environment.NewLine
-                    + "Trying to display the video stream from rtsp://" + CameraCurrentAddress + "/h264";
-                var uri = new Uri("rtsp://" + CameraCurrentAddress + "/h264");
-                streamPlayerControl1.StartPlay(uri);
-            }
-
-            this.ActiveControl = textBoxSerialNumber;
+            labelOutput.Text = "Error. The search for camera has been terminated.";
         }
 
         // this is called when the serial number changed
@@ -481,7 +508,7 @@ namespace IPCameraManufactureTool
                 SerialNumber = "";
 
             // update the config button
-            buttonConfig.Enabled = !(String.IsNullOrEmpty(SerialNumber) || String.IsNullOrEmpty(CameraCurrentAddress)) && streamPlayerControl1.IsPlaying;
+            buttonConfig.Enabled = !String.IsNullOrEmpty(SerialNumber) && streamPlayerControl1.IsPlaying;
             configStatus = 0;
         }
 
@@ -562,8 +589,11 @@ namespace IPCameraManufactureTool
             }
 
             // Start the Searching of cameras
+            CameraCurrentAddress = "";
+            if (streamPlayerControl1.IsPlaying)
+                streamPlayerControl1.Stop(); // the play shall be stopped whenever the camera address is cleared
             if (!SearchingCamera.IsBusy)
-                SearchingCamera.RunWorkerAsync();
+                SearchingCamera.RunWorkerAsync();  // This is the only place to launch background camera search
 
             this.ActiveControl = textBoxSerialNumber;
         }
@@ -588,38 +618,39 @@ namespace IPCameraManufactureTool
         // This is called when the stream play starts successfully
         private void StreamStarted(object sender, EventArgs e)
         {
-            buttonConfig.Enabled = false;
+            // beep to indicate the camera is ok
+            Console.Beep();
 
             // Enable the config button in case the Serial number is valid
             if (!backgroundConfig.IsBusy)
             {
-                labelOutput.Text = "Camera stream from " + CameraCurrentAddress + " is playing well.";
+                labelOutput.Text = "Playing stream from " 
+                    + CameraCurrentAddress + ".";
                 if (String.IsNullOrEmpty(SerialNumber))
-                    labelOutput.Text += Environment.NewLine + "Please scan or input the serial number.";
+                    labelOutput.Text += Environment.NewLine 
+                        + "Please scan or input the serial number.";
                 else
                     buttonConfig.Enabled = true;
                 progressBar1.Value = 0;
             }
             else
-                labelOutput.Text = "Camera stream from " + CameraCurrentAddress + " is playing again.";
+                labelOutput.Text = "Camera stream from " + CameraCurrentAddress + " is resumed.";
         }
 
         // This is called when the stream cannot be played
         private void StreamFailed(object sender, WebEye.Controls.WinForms.StreamPlayerControl.StreamFailedEventArgs e)
         {
-            if (configStatus == 3)
+            if (configStatus == 1)
+                return;
+
+            if (configStatus > 1)
             {
                 labelOutput.Text = "Please plug a new camera if you want to configure another camera.";
                 configStatus = 0;
             }
-            else if (configStatus == 1)
-            {
-                labelOutput.Text = "Cannot play the stream from the camera now.";
-                return;
-                //configStatus = 2;
-            }
             else if (configStatus == 0)
-                labelOutput.Text = String.Format("The address {0} is not occupied by a {1} IP camera.", CameraCurrentAddress, ModelNumber);
+                labelOutput.Text = String.Format("The address {0} is not occupied by a {1} IP camera with error {2}.", 
+                    CameraCurrentAddress, ModelNumber, e.ToString());
 
             progressBar1.Value = 0;
             buttonConfig.Enabled = false;
@@ -633,20 +664,18 @@ namespace IPCameraManufactureTool
         private void StreamStopped(object sender, EventArgs e)
         {
             if (configStatus == 1)
-                CameraCurrentAddress = CameraConfigAddress + "0";
-            else
-                CameraCurrentAddress = "";
+                return;
 
-            if (configStatus == 3)
-            {
-                labelOutput.Text = "Please plug a new camera if you want to configure another camera.";
+            if (configStatus > 1)
+                labelOutput.Text = "Please plug a new camera to be configured.";
 
-                progressBar1.Value = 0;
-                buttonConfig.Enabled = false;
-                comboBox1.Enabled = true;
-                textBoxSerialNumber.Enabled = true;
-                this.ActiveControl = textBoxSerialNumber;
-            }
+            progressBar1.Value = 0;
+            buttonConfig.Enabled = false;
+            comboBox1.Enabled = true;
+            textBoxSerialNumber.Enabled = true;
+            this.ActiveControl = textBoxSerialNumber;
+            configStatus = 0;
+            CameraCurrentAddress = "";
         }
 
         // using the load form to update the combo box list according to the  
