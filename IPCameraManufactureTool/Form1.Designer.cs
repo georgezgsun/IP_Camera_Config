@@ -50,7 +50,7 @@
             this.comboBox1.Items.AddRange(new object[] {
             "200-1301-00",
             "200-1301-10"});
-            this.comboBox1.Location = new System.Drawing.Point(27, 11);
+            this.comboBox1.Location = new System.Drawing.Point(863, 11);
             this.comboBox1.Margin = new System.Windows.Forms.Padding(2);
             this.comboBox1.Name = "comboBox1";
             this.comboBox1.Size = new System.Drawing.Size(113, 21);
@@ -60,7 +60,7 @@
             // 
             // textBoxSerialNumber
             // 
-            this.textBoxSerialNumber.Location = new System.Drawing.Point(27, 221);
+            this.textBoxSerialNumber.Location = new System.Drawing.Point(863, 221);
             this.textBoxSerialNumber.Margin = new System.Windows.Forms.Padding(2);
             this.textBoxSerialNumber.Name = "textBoxSerialNumber";
             this.textBoxSerialNumber.Size = new System.Drawing.Size(113, 20);
@@ -72,7 +72,7 @@
             // 
             this.labelOutput.AutoSize = true;
             this.labelOutput.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.labelOutput.Location = new System.Drawing.Point(24, 310);
+            this.labelOutput.Location = new System.Drawing.Point(860, 310);
             this.labelOutput.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.labelOutput.MaximumSize = new System.Drawing.Size(140, 290);
             this.labelOutput.Name = "labelOutput";
@@ -85,7 +85,7 @@
             // 
             this.buttonConfig.AllowDrop = true;
             this.buttonConfig.AutoEllipsis = true;
-            this.buttonConfig.Location = new System.Drawing.Point(27, 506);
+            this.buttonConfig.Location = new System.Drawing.Point(863, 506);
             this.buttonConfig.Margin = new System.Windows.Forms.Padding(2);
             this.buttonConfig.Name = "buttonConfig";
             this.buttonConfig.Size = new System.Drawing.Size(67, 33);
@@ -96,7 +96,7 @@
             // 
             // progressBar1
             // 
-            this.progressBar1.Location = new System.Drawing.Point(168, 518);
+            this.progressBar1.Location = new System.Drawing.Point(15, 518);
             this.progressBar1.Margin = new System.Windows.Forms.Padding(2);
             this.progressBar1.Name = "progressBar1";
             this.progressBar1.Size = new System.Drawing.Size(820, 21);
@@ -108,7 +108,7 @@
             | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.streamPlayerControl1.Font = new System.Drawing.Font("Microsoft Sans Serif", 20F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.streamPlayerControl1.Location = new System.Drawing.Point(168, 14);
+            this.streamPlayerControl1.Location = new System.Drawing.Point(15, 14);
             this.streamPlayerControl1.Margin = new System.Windows.Forms.Padding(5);
             this.streamPlayerControl1.Name = "streamPlayerControl1";
             this.streamPlayerControl1.Size = new System.Drawing.Size(820, 486);
@@ -134,7 +134,7 @@
             // pictureBox1
             // 
             this.pictureBox1.Image = ((System.Drawing.Image)(resources.GetObject("pictureBox1.Image")));
-            this.pictureBox1.Location = new System.Drawing.Point(27, 246);
+            this.pictureBox1.Location = new System.Drawing.Point(863, 246);
             this.pictureBox1.Name = "pictureBox1";
             this.pictureBox1.Size = new System.Drawing.Size(113, 48);
             this.pictureBox1.SizeMode = System.Windows.Forms.PictureBoxSizeMode.StretchImage;
@@ -143,17 +143,18 @@
             // 
             // pictureBoxCameraModel
             // 
-            this.pictureBoxCameraModel.Location = new System.Drawing.Point(27, 95);
+            this.pictureBoxCameraModel.Location = new System.Drawing.Point(863, 95);
             this.pictureBoxCameraModel.Name = "pictureBoxCameraModel";
             this.pictureBoxCameraModel.Size = new System.Drawing.Size(113, 113);
             this.pictureBoxCameraModel.SizeMode = System.Windows.Forms.PictureBoxSizeMode.StretchImage;
             this.pictureBoxCameraModel.TabIndex = 10;
             this.pictureBoxCameraModel.TabStop = false;
+            this.pictureBoxCameraModel.Click += new System.EventHandler(this.clickCameraPicture);
             // 
             // labelCameraDescription
             // 
             this.labelCameraDescription.AutoSize = true;
-            this.labelCameraDescription.Location = new System.Drawing.Point(24, 45);
+            this.labelCameraDescription.Location = new System.Drawing.Point(860, 45);
             this.labelCameraDescription.MaximumSize = new System.Drawing.Size(140, 0);
             this.labelCameraDescription.Name = "labelCameraDescription";
             this.labelCameraDescription.Size = new System.Drawing.Size(102, 13);
@@ -174,6 +175,7 @@
             this.Controls.Add(this.labelOutput);
             this.Controls.Add(this.textBoxSerialNumber);
             this.Controls.Add(this.comboBox1);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedToolWindow;
             this.Margin = new System.Windows.Forms.Padding(2);
             this.Name = "Form1";
             this.Text = "IP Camera Configuration Tool";

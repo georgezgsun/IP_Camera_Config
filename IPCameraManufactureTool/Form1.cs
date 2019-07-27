@@ -73,13 +73,62 @@ namespace IPCameraManufactureTool
             {
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(cmd);
                 if (!String.IsNullOrEmpty(Auth))
-                {
-                    request.Headers.Add("Authorization", "Basic " + Auth);
-                    Thread.Sleep(100);
-                }
+                    //request.Headers.Add("Authorization", "Basic " + Auth);
+                    request.Headers["Authorization"] = "Basic " + Auth;
                 WebResponse response = request.GetResponse();
                 StreamReader inStream = new StreamReader(response.GetResponseStream());
                 return inStream.ReadToEnd();
+            }
+
+            catch (HttpRequestException error)
+            {
+                return "Error " + error.Message;
+            }
+        }
+
+        // Config the camera with a cgi command using POST in format http:\\hostname_or_ip\cgi_xxx?param0_xxx, Auth is the base64 encoded
+        private string Config_POST(string cmd, string Auth = "")
+        {
+            try
+            {
+                int index = cmd.IndexOf('?');
+                string url = cmd.Substring(0, index);
+                string postData = cmd.Substring(index + 1);
+                byte[] bytes = Encoding.UTF8.GetBytes(postData);
+
+                //// Upload the input string using the HTTP 1.0 POST method.
+                //WebClient myWebClient = new WebClient();
+                //myWebClient.Headers["Content-Type"] = "application/x-www-form-urlencoded";
+                //myWebClient.Headers["Authorization"] = "Basic " + Auth;
+
+                //// Display the headers in the request
+                //Console.Write("The request headers: ");
+                //Console.WriteLine(myWebClient.Headers.ToString());
+                //Console.WriteLine("Uploading to {0} {1} ...", url, postData);
+
+                //byte[] responseArray = myWebClient.UploadData(url, "POST", bytes);
+                //string result = Encoding.ASCII.GetString(responseArray);
+                //Console.WriteLine("\nResponse received was {0}", result);
+                //return result;
+
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+                if (!String.IsNullOrEmpty(Auth))
+                    request.Headers["Authorization"] = "Basic " + Auth;
+                request.Method = "POST";
+                request.ContentType = "application/x-www-form-urlencoded";
+                request.ContentLength = bytes.Length;
+
+                Stream requestStream = request.GetRequestStream();
+                requestStream.Write(bytes, 0, bytes.Length);
+
+                WebResponse response = request.GetResponse();
+                StreamReader inStream = new StreamReader(response.GetResponseStream());
+
+                string result = inStream.ReadToEnd();
+
+                requestStream.Dispose();
+                inStream.Dispose();
+                return result;
             }
 
             catch (HttpRequestException error)
@@ -162,21 +211,23 @@ namespace IPCameraManufactureTool
                         ln = ln.Replace("$(Tm)", DT.Substring(14, 2));
                         ln = ln.Replace("$(Ts)", DT.Substring(17, 2));
                     }
-                    else if (ln.Contains("$Wait="))
+                    else if (ln.Contains("$WaitStream="))
                     {
                         // To stop the stream play
                         //worker.ReportProgress(-1);
 
-                        ln = ln.Replace("$Wait=", "");
+                        Log();
+                        ln = ln.Replace("$WaitStream=", "");
                         int s = 1; // default value for sleep is 1s 
                         if (!Int32.TryParse(ln, out s))
                             Log("Warning: Sleep time is not specified correct at line " + s.ToString());
-                        Log(String.Format("Wait for the resume of the camera stream on a different address in {0} seconds.", s));
+                        Log(String.Format("Wait for the resume of the camera stream in {0} seconds.", s));
 
                         // wait for the stream to be resumed or timeout
                         do
                         {
-                            Thread.Sleep(1000);  //?
+                            worker.ReportProgress(1000); // tell the handler to restart the play
+                            Thread.Sleep(1000);  // sleep 1s first
                             s--;
                             if (s < 0)
                             {
@@ -187,7 +238,6 @@ namespace IPCameraManufactureTool
                         } while (!streamPlayerControl1.IsPlaying);
 
                         Log("The camera play has been resumed.");
-                        Log();
                         continue;
                     }
                     else if (ln.Contains("$(SN)"))
@@ -199,14 +249,21 @@ namespace IPCameraManufactureTool
                     }
                     else if (ln.Contains("$Sleep="))
                     {
-                        ln = ln.Replace("$Sleep=", "");
+                        ln = ln.Replace("$Sleep=","");
                         int s = 1; // default value for sleep is 1s 
                         if (!Int32.TryParse(ln, out s))
                             Log("Warning: Sleep time is not specified correct at line " + s.ToString());
-                        Log(String.Format("Sleep {0} seconds.", s));
+                        Log(String.Format("Sleep for {0} seconds.", s));
+                        Thread.Sleep(s * 1000);
                         Log();
 
-                        Thread.Sleep(s);
+                        continue;
+                    }
+                    else if (ln.Contains("$StopPlay"))
+                    {
+                        Log("Try to stop the playing of camera stream.");
+                        worker.ReportProgress(-1);
+                        Thread.Sleep(1000);
                         continue;
                     }
 
@@ -225,18 +282,31 @@ namespace IPCameraManufactureTool
                         ln = ln.Replace("$(IP)", CameraCurrentAddress);
                     }
 
-                    Console.WriteLine("Send config command: " + ln);
-                    Log("Send config command: " + ln);
-
                     // config one line and read the results
-                    ln = Config(ln, CameraAuth);
+                    Log();
+                    if (ln.Contains("POST"))
+                    {
+                        ln = ln.Replace("POST ", "").Trim();
+                        Console.WriteLine("Send config command: " + ln);
+                        Log("Send config command using POST: " + ln);
+
+                        ln = Config_POST(ln, CameraAuth); // configure using POST
+                    }
+                    else
+                    {
+                        Console.WriteLine("Send config command: " + ln);
+                        Log("Send config command using GET: " + ln);
+
+                        ln = Config(ln, CameraAuth); // configure using GET
+                    }
+
                     if (ln.Length > 6 && ln.Substring(0, 6) == "Error ")
                         configStatus = 4;  // Config error of getting exceptions
 
                     Console.WriteLine("Get response: " + ln.Replace("<br>", "\n"));
                     Log("Get response: " + ln);
-                    if (ln.Length < 10)
-                        Log();
+                    //if (ln.Length < 10)
+                    //    Log();
 
                     if (CheckFirmware)
                     {
@@ -252,7 +322,10 @@ namespace IPCameraManufactureTool
                     }
 
                     if (configStatus > 1)
+                    {
+                        Log("Cannot complete the configuration because of a failure.");
                         return;
+                    }
                 }
 
                 // save the image after configuration
@@ -273,30 +346,60 @@ namespace IPCameraManufactureTool
             catch (HttpRequestException error)
             {
                 Console.WriteLine("\nException Message :{0} ", error.Message);
+                configStatus = 4;
             }
         }
 
         // This is called when the background worker report grogress
         private void ConfigProgressChanged(object sender, ProgressChangedEventArgs e)
         {
-            if (e.ProgressPercentage < 0 || e.ProgressPercentage >= TotalCgis)
+            if (e.ProgressPercentage < 0)
             {
-                labelOutput.Text = "Camera address changed." 
+                labelOutput.Text = "Stop the playing of camera stream for critical parameters has changed." 
                     + Environment.NewLine
                     + "Waiting for the video stream to resume...";
-                Log("Try to stop playing of camera stream.");
 
                 if (streamPlayerControl1.IsPlaying)
                 {
                     streamPlayerControl1.Stop();
-                    Log("Find an on-going play. Now stop it.");
+                    Log("Stop the stream playing.");
                 }
+                return;
             }
-            else 
+
+            if (e.ProgressPercentage >= TotalCgis)
             {
-                labelOutput.Text = String.Format("Configuration in progress {0}/{1}...", e.ProgressPercentage, TotalCgis);
-                progressBar1.Value = 100 * (e.ProgressPercentage + 1) / TotalCgis;
+                if (streamPlayerControl1.IsPlaying)
+                {
+                    streamPlayerControl1.Stop();
+                    Log("Find the camera stream is still playing. Stop it now.");
+                }
+                else
+                {
+                    Log("Trying to restart the playing of camera stream.");
+
+                    // Make the display moving
+                    string str = labelOutput.Text;
+                    str = str.Substring(str.Length - 1, 1);
+                    if (str == "-")
+                        str = "\\";
+                    else if (str == "\\")
+                        str = "|";
+                    else if (str == "|")
+                        str = "/";
+                    else
+                        str = "-";
+                    labelOutput.Text = "Trying to restart the playing of camera stream. " + str;
+
+                    str = CameraStreamUri.Replace("$(IP)", CameraCurrentAddress);
+                    var uri = new Uri(str);
+                    streamPlayerControl1.StartPlay(uri);
+                }
+                return;
             }
+
+            labelOutput.Text = String.Format("Configuration in progress {0}/{1}...", e.ProgressPercentage, TotalCgis);
+            progressBar1.Value = 100 * (e.ProgressPercentage + 1) / TotalCgis;
         }
 
         // This is called when the background configuration is completed
@@ -449,6 +552,10 @@ namespace IPCameraManufactureTool
         // this is called when IP camera searching makes a progress
         private void SearchCameraProgressChanged(object sender, ProgressChangedEventArgs e)
         {
+            // doing nothing during configuration
+            if (backgroundConfig.IsBusy)
+                return;
+
             int progress = progressBar1.Value;
 
             // Check if the camera been found or not
@@ -471,7 +578,7 @@ namespace IPCameraManufactureTool
                 // Trying to start the camera stream playing
                 if (!streamPlayerControl1.IsPlaying)
                 {
-                    // This is the only place to start stream playing.
+                    // To start stream playing after find an IP address.
                     string str = CameraStreamUri.Replace("$(IP)", CameraCurrentAddress);
                     var uri = new Uri(str);
                     streamPlayerControl1.StartPlay(uri);
@@ -480,6 +587,9 @@ namespace IPCameraManufactureTool
                         + Environment.NewLine
                         + "Start to play the stream from " 
                         + str;
+
+                    if (backgroundConfig.IsBusy)
+                        Log("Start to play the stream from " + str);
                 }
 
                 progress = 100;
@@ -544,7 +654,7 @@ namespace IPCameraManufactureTool
                         continue;
 
                     // End of config
-                    if (ln.Contains("$END"))
+                    if (ln.Contains("$End"))
                         break;
 
                     // specify the new ip address of the camera
@@ -555,9 +665,9 @@ namespace IPCameraManufactureTool
                     }
 
                     // specify the original ip address of the camera
-                    if (ln.Contains("$BaseIP="))
+                    if (ln.Contains("$OriginIP="))
                     {
-                        CameraOrigAddress = ln.Replace("$BaseIP=", "");
+                        CameraOrigAddress = ln.Replace("$OriginIP=", "");
                         continue;
                     }
 
@@ -695,5 +805,16 @@ namespace IPCameraManufactureTool
         // to handle arp using system dll. This is used to get the MAC address
         [DllImport("iphlpapi.dll", ExactSpelling = true)]
         public static extern int SendARP(int DestIP, int SrcIP, [Out] byte[] pMacAddr, ref int PhyAddrLen);
+
+        private void clickCameraPicture(object sender, EventArgs e)
+        {
+            if (backgroundConfig.IsBusy)
+                return;
+
+            configStatus = 0;
+            CameraCurrentAddress = "";
+            if (streamPlayerControl1.IsPlaying)
+                streamPlayerControl1.Stop();
+        }
     }
 }
