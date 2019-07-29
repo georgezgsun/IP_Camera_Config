@@ -85,7 +85,7 @@
             // 
             this.buttonConfig.AllowDrop = true;
             this.buttonConfig.AutoEllipsis = true;
-            this.buttonConfig.Location = new System.Drawing.Point(863, 506);
+            this.buttonConfig.Location = new System.Drawing.Point(909, 506);
             this.buttonConfig.Margin = new System.Windows.Forms.Padding(2);
             this.buttonConfig.Name = "buttonConfig";
             this.buttonConfig.Size = new System.Drawing.Size(67, 33);

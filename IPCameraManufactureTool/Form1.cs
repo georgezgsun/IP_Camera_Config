@@ -72,6 +72,11 @@ namespace IPCameraManufactureTool
             try
             {
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(cmd);
+                if (cmd.Substring(20).Contains(CameraCurrentAddress))
+                    request.Timeout = 2000; // set time out to be 2s
+                else
+                    request.Timeout = 20000; // set time out to be 20s
+
                 if (!String.IsNullOrEmpty(Auth))
                     //request.Headers.Add("Authorization", "Basic " + Auth);
                     request.Headers["Authorization"] = "Basic " + Auth;
@@ -82,6 +87,8 @@ namespace IPCameraManufactureTool
 
             catch (HttpRequestException error)
             {
+                if (cmd.Substring(20).Contains(CameraCurrentAddress))
+                    return "IP address has been changed.";
                 return "Error " + error.Message;
             }
         }
@@ -255,7 +262,6 @@ namespace IPCameraManufactureTool
                             Log("Warning: Sleep time is not specified correct at line " + s.ToString());
                         Log(String.Format("Sleep for {0} seconds.", s));
                         Thread.Sleep(s * 1000);
-                        Log();
 
                         continue;
                     }
@@ -263,7 +269,7 @@ namespace IPCameraManufactureTool
                     {
                         Log("Try to stop the playing of camera stream.");
                         worker.ReportProgress(-1);
-                        Thread.Sleep(1000);
+                        Thread.Sleep(100);
                         continue;
                     }
 
@@ -627,6 +633,11 @@ namespace IPCameraManufactureTool
         {
             // reset the flags
             configStatus = 0;
+
+            // Check if the model number is in valid format, which shall be ddd-dddd-dd
+            Regex rgx = new Regex(@"^[0-9]{3}-[0-9]{4}-[0-9]{2}");
+            if (!rgx.IsMatch(comboBox1.Text))
+                return;
 
             // get the model number
             ModelNumber = comboBox1.Text;
