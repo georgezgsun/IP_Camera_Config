@@ -12,6 +12,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
@@ -142,6 +143,37 @@ namespace IPCameraManufactureTool
             {
                 return "Error " + error.Message;
             }
+        }
+
+        // Config the camera with a cgi command using WebClient
+        private string Config_Direct(string cmd, string Auth = "")
+        {
+            try
+            {
+                using (WebClient webClient = new WebClient())
+                {
+                    if (!String.IsNullOrEmpty(Auth))
+                        webClient.Headers.Add("Authorization", "Basic " + Auth);
+                    //webClient.Headers.Add("Content-Type", "text/html, */*");
+                    webClient.Headers.Add("Accept", "text/html, application/xhtml+xml, application/xml");
+                    webClient.Headers.Add("User-Agent", "IPC_CGI");
+                    //webClient.Headers.Add("connection", "close");
+                    string text = webClient.DownloadString(cmd);
+
+                    WebHeaderCollection myWebHeaderCollection = webClient.ResponseHeaders;
+                    Console.WriteLine("The response headers:\n");
+                    for (int i = 0; i < myWebHeaderCollection.Count; i++)
+                        Console.WriteLine("\t" + myWebHeaderCollection.GetKey(i) + " = " + myWebHeaderCollection.Get(i));
+
+                    return text;
+                }
+            }
+
+            catch (WebException ex)
+            {
+                return "Error " + ex.Message.ToString();
+            }
+
         }
 
         // background worker used to make all the configurations of a camera
@@ -304,15 +336,15 @@ namespace IPCameraManufactureTool
                         Log("Send config command using GET: " + ln);
 
                         ln = Config(ln, CameraAuth); // configure using GET
+                        //ln = Config_Direct(ln, CameraAuth); // configure using GET
                     }
-
-                    if (ln.Length > 6 && ln.Substring(0, 6) == "Error ")
-                        configStatus = 4;  // Config error of getting exceptions
 
                     Console.WriteLine("Get response: " + ln.Replace("<br>", "\n"));
                     Log("Get response: " + ln);
-                    //if (ln.Length < 10)
-                    //    Log();
+                    //ln = ln.ToLower();
+
+                    if (ln.ToLower().Contains("error") || ln.ToLower().Contains("failed"))
+                        configStatus = 4;  // Config error of getting exceptions
 
                     if (CheckFirmware)
                     {
@@ -420,7 +452,6 @@ namespace IPCameraManufactureTool
                     + Environment.NewLine + Environment.NewLine 
                     + "Please unplug the camera.";
                 Log("Configuration accomplished.");
-                textBoxSerialNumber.Text = "";
                 configStatus = 2;
             }
             else if (configStatus == 3)
@@ -447,6 +478,38 @@ namespace IPCameraManufactureTool
 
             Log("==");
             log.Close();
+
+            // Copy files to network shared folder when the configuration is completed successfully
+            if (configStatus == 2)
+            {
+                string sourcePath = WorkPath + SerialNumber + @"\";
+                string destPath = @"\\public\public\CopTrax IP Camera Files\" + SerialNumber + @"\";
+                DirectoryInfo dir = new DirectoryInfo(sourcePath);
+
+                try
+                {
+                    // Create the destnation directory if it does not exist
+                    if (!Directory.Exists(destPath))
+                        Directory.CreateDirectory(destPath);
+
+                    // Copy all the files in local disk to network shared drive
+                    FileInfo[] files = dir.GetFiles();
+                    foreach (FileInfo file in files)
+                    {
+                        string filePath = Path.Combine(destPath, file.Name);
+                        file.CopyTo(filePath, true);  // copy and replace the original file
+                    }
+
+                    // Empty the serial number. This will invoke the method of SerialNumberInput
+                    textBoxSerialNumber.Text = "";
+                }
+
+                catch
+                {
+                    labelOutput.Text = string.Format("Cannot copy the files in {0} to {1}. ", sourcePath, destPath) 
+                        + Environment.NewLine + "You may have to copy them manually.";
+                }
+            }
 
             // beep and update the status 
             Console.Beep();
@@ -811,6 +874,8 @@ namespace IPCameraManufactureTool
                     comboBox1.Items.Add(Path.GetFileNameWithoutExtension(a));
             }
             comboBox1.SelectedItem = comboBox1.Items[0];
+
+            this.Text = Application.ProductName + ", Version " + Application.ProductVersion;
         }
 
         // to handle arp using system dll. This is used to get the MAC address
