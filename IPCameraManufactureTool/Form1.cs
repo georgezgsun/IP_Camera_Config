@@ -67,20 +67,67 @@ namespace IPCameraManufactureTool
             return true;
         }
 
-        // Config the camera with a cgi command in format http:\\hostname_or_ip\cgi_xxx?param0_xxx, Auth is the base64 encoded
+        // Config the camera with a cgi command in format http:\\hostname_or_ip\cgi_xxx?param0_xxx, POST and Disget Auth are considered by keywords
         private string Config(string cmd, string Auth = "")
         {
             try
             {
-                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(cmd);
+                int index;
+                Uri uri;
+                HttpWebRequest request;
+
+                if (cmd.Contains("POST "))
+                {
+                    cmd = cmd.Replace("POST ", "");  // get rid off the POST indicator
+                    index = cmd.IndexOf('?');
+                    string url = cmd.Substring(0, index);
+                    string postData = cmd.Substring(index + 1);
+                    byte[] bytes = Encoding.UTF8.GetBytes(postData);
+
+                    uri = new Uri(url);
+                    request = (HttpWebRequest)WebRequest.Create(url);
+                    request.Method = "POST";
+                    request.ContentType = "application/x-www-form-urlencoded";
+                    request.ContentLength = bytes.Length;
+
+                    Stream requestStream = request.GetRequestStream();
+                    requestStream.Write(bytes, 0, bytes.Length);
+                }
+                else
+                {
+                    uri = new Uri(cmd);
+
+                    request = (HttpWebRequest)WebRequest.Create(uri);
+                }
+
                 if (cmd.Substring(20).Contains(CameraCurrentAddress))
-                    request.Timeout = 2000; // set time out to be 2s
+                    request.Timeout = 5000; // set time out to be 5s
                 else
                     request.Timeout = 20000; // set time out to be 20s
 
                 if (!String.IsNullOrEmpty(Auth))
-                    //request.Headers.Add("Authorization", "Basic " + Auth);
-                    request.Headers["Authorization"] = "Basic " + Auth;
+                {
+                    if (Auth.Contains("Digest "))
+                    {
+                        Auth = Auth.Replace("Digest ", "");
+                        index = Auth.IndexOf(':');
+                        string user = Auth.Substring(0, index);
+                        string password = Auth.Substring(index + 1);
+
+                        var credentialCache = new CredentialCache();
+                        credentialCache.Add(
+                          new Uri(uri.GetLeftPart(UriPartial.Authority)), // request url's host
+                          "Digest",  // authentication type 
+                          new NetworkCredential(user, password) // credentials 
+                        );
+                        request.Credentials = credentialCache;
+                    }
+                    else
+                    {
+                        request.Headers["Authorization"] = "Basic " + Convert.ToBase64String(ASCIIEncoding.ASCII.GetBytes(Auth));
+                    }
+                }
+
                 WebResponse response = request.GetResponse();
                 StreamReader inStream = new StreamReader(response.GetResponseStream());
                 return inStream.ReadToEnd();
@@ -92,88 +139,11 @@ namespace IPCameraManufactureTool
                     return "IP address has been changed.";
                 return "Error " + error.Message;
             }
-        }
 
-        // Config the camera with a cgi command using POST in format http:\\hostname_or_ip\cgi_xxx?param0_xxx, Auth is the base64 encoded
-        private string Config_POST(string cmd, string Auth = "")
-        {
-            try
+            catch (WebException error)
             {
-                int index = cmd.IndexOf('?');
-                string url = cmd.Substring(0, index);
-                string postData = cmd.Substring(index + 1);
-                byte[] bytes = Encoding.UTF8.GetBytes(postData);
-
-                //// Upload the input string using the HTTP 1.0 POST method.
-                //WebClient myWebClient = new WebClient();
-                //myWebClient.Headers["Content-Type"] = "application/x-www-form-urlencoded";
-                //myWebClient.Headers["Authorization"] = "Basic " + Auth;
-
-                //// Display the headers in the request
-                //Console.Write("The request headers: ");
-                //Console.WriteLine(myWebClient.Headers.ToString());
-                //Console.WriteLine("Uploading to {0} {1} ...", url, postData);
-
-                //byte[] responseArray = myWebClient.UploadData(url, "POST", bytes);
-                //string result = Encoding.ASCII.GetString(responseArray);
-                //Console.WriteLine("\nResponse received was {0}", result);
-                //return result;
-
-                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-                if (!String.IsNullOrEmpty(Auth))
-                    request.Headers["Authorization"] = "Basic " + Auth;
-                request.Method = "POST";
-                request.ContentType = "application/x-www-form-urlencoded";
-                request.ContentLength = bytes.Length;
-
-                Stream requestStream = request.GetRequestStream();
-                requestStream.Write(bytes, 0, bytes.Length);
-
-                WebResponse response = request.GetResponse();
-                StreamReader inStream = new StreamReader(response.GetResponseStream());
-
-                string result = inStream.ReadToEnd();
-
-                requestStream.Dispose();
-                inStream.Dispose();
-                return result;
+                return "Continuation " + error.Message;
             }
-
-            catch (HttpRequestException error)
-            {
-                return "Error " + error.Message;
-            }
-        }
-
-        // Config the camera with a cgi command using WebClient
-        private string Config_Direct(string cmd, string Auth = "")
-        {
-            try
-            {
-                using (WebClient webClient = new WebClient())
-                {
-                    if (!String.IsNullOrEmpty(Auth))
-                        webClient.Headers.Add("Authorization", "Basic " + Auth);
-                    //webClient.Headers.Add("Content-Type", "text/html, */*");
-                    webClient.Headers.Add("Accept", "text/html, application/xhtml+xml, application/xml");
-                    webClient.Headers.Add("User-Agent", "IPC_CGI");
-                    //webClient.Headers.Add("connection", "close");
-                    string text = webClient.DownloadString(cmd);
-
-                    WebHeaderCollection myWebHeaderCollection = webClient.ResponseHeaders;
-                    Console.WriteLine("The response headers:\n");
-                    for (int i = 0; i < myWebHeaderCollection.Count; i++)
-                        Console.WriteLine("\t" + myWebHeaderCollection.GetKey(i) + " = " + myWebHeaderCollection.Get(i));
-
-                    return text;
-                }
-            }
-
-            catch (WebException ex)
-            {
-                return "Error " + ex.Message.ToString();
-            }
-
         }
 
         // background worker used to make all the configurations of a camera
@@ -231,7 +201,7 @@ namespace IPCameraManufactureTool
                     if (ln.Contains("$Auth="))
                     {
                         CameraAuth = ln.Replace("$Auth=", "");
-                        CameraAuth = Convert.ToBase64String(ASCIIEncoding.ASCII.GetBytes(CameraAuth));
+                        //CameraAuth = Convert.ToBase64String(ASCIIEncoding.ASCII.GetBytes(CameraAuth));
                         continue;
                     }
 
@@ -265,7 +235,7 @@ namespace IPCameraManufactureTool
                         // wait for the stream to be resumed or timeout
                         do
                         {
-                            worker.ReportProgress(1000); // tell the handler to restart the play
+                            worker.ReportProgress(1000 + s); // tell the handler to restart the play
                             Thread.Sleep(1000);  // sleep 1s first
                             s--;
                             if (s < 0)
@@ -323,25 +293,17 @@ namespace IPCameraManufactureTool
                     // config one line and read the results
                     Log();
                     if (ln.Contains("POST"))
-                    {
-                        ln = ln.Replace("POST ", "").Trim();
-                        Console.WriteLine("Send config command: " + ln);
-                        Log("Send config command using POST: " + ln);
-
-                        ln = Config_POST(ln, CameraAuth); // configure using POST
-                    }
+                        Log("Send config command to camera using POST: " + ln.Replace("POST ", ""));
                     else
-                    {
-                        Console.WriteLine("Send config command: " + ln);
-                        Log("Send config command using GET: " + ln);
+                        Log("Send config command to camera using GET: " + ln);
 
-                        ln = Config(ln, CameraAuth); // configure using GET
-                        //ln = Config_Direct(ln, CameraAuth); // configure using GET
-                    }
+                    Console.WriteLine("Send config command to camera: " + ln);
+
+                    // Configure the camera
+                    ln = Config(ln, CameraAuth);
 
                     Console.WriteLine("Get response: " + ln.Replace("<br>", "\n"));
                     Log("Get response: " + ln);
-                    //ln = ln.ToLower();
 
                     if (ln.ToLower().Contains("error") || ln.ToLower().Contains("failed"))
                         configStatus = 4;  // Config error of getting exceptions
@@ -383,7 +345,19 @@ namespace IPCameraManufactureTool
 
             catch (HttpRequestException error)
             {
-                Console.WriteLine("\nException Message :{0} ", error.Message);
+                Console.WriteLine("\nException Message : {0} ", error.Message);
+                configStatus = 4;
+            }
+
+            catch (WebException error)
+            {
+                Console.WriteLine("\nException Message : {0}.", error.Message);
+                configStatus = 4;
+            }
+
+            catch
+            {
+                Console.WriteLine("\nUnkown exception.");
                 configStatus = 4;
             }
         }
@@ -417,19 +391,10 @@ namespace IPCameraManufactureTool
                     Log("Trying to restart the playing of camera stream.");
 
                     // Make the display moving
-                    string str = labelOutput.Text;
-                    str = str.Substring(str.Length - 1, 1);
-                    if (str == "-")
-                        str = "\\";
-                    else if (str == "\\")
-                        str = "|";
-                    else if (str == "|")
-                        str = "/";
-                    else
-                        str = "-";
-                    labelOutput.Text = "Trying to restart the playing of camera stream. " + str;
 
-                    str = CameraStreamUri.Replace("$(IP)", CameraCurrentAddress);
+                    labelOutput.Text = String.Format("Waiting for the camera stream to be resumed at new IP address in {0}s.", e.ProgressPercentage - 1000);
+
+                    string str = CameraStreamUri.Replace("$(IP)", CameraCurrentAddress);
                     var uri = new Uri(str);
                     streamPlayerControl1.StartPlay(uri);
                 }
